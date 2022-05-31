@@ -43,7 +43,7 @@ pub enum BackgroundColor {
 }
 
 #[allow(dead_code)]
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 struct ColorCode{
     code : u8
 }
@@ -144,6 +144,17 @@ impl Writer{
             }
         }
     }
+
+    fn clean_buffer(&mut self) {
+        for row in 0..self.rowpos {
+            for col in 0..self.colpos {
+                    self.buffer.data[row][col].write(VGAChar { char: 0, color_code: self.color });
+            }
+        }
+        
+        self.colpos = 0;
+        self.rowpos = 0;
+    }
 }
 
 // Implementation to support formating macro
@@ -175,3 +186,177 @@ macro_rules! println {
     ($($args:tt)*) => ($crate::print!("{}\n", format_args!($($args)*)));
 }
 
+/**************************
+ *
+ *       Unit tests
+ *
+ **************************/
+
+#[test_case]
+fn test_simple_print_char_char_val() {
+    let c = b'a';
+    WRITER.lock().print_char(c);
+    let rowpos = WRITER.lock().rowpos;
+    let colpos = WRITER.lock().colpos;
+    let screen_char = WRITER.lock().buffer.data[rowpos][colpos - 1].read();
+    assert_eq!(c, screen_char.char);
+}
+
+#[test_case]
+fn test_simple_print_char_color_val() {
+    let c = b'a';
+    let color_code = ColorCode::new(FontColor::Pink, BackgroundColor::Cyan);
+    WRITER.lock().set_color(FontColor::Pink, BackgroundColor::Cyan);
+    WRITER.lock().print_char(c);
+    let rowpos = WRITER.lock().rowpos;
+    let colpos = WRITER.lock().colpos;
+    let screen_char = WRITER.lock().buffer.data[rowpos][colpos - 1].read();
+    assert_eq!(color_code, screen_char.color_code);
+}
+
+#[test_case]
+fn test_simple_print_macro() {
+    let s = "test string";
+    WRITER.lock().clean_buffer();
+    print!("{}", s);
+    for (pos, c) in s.bytes().enumerate() {
+        let screen_char = WRITER.lock().buffer.data[0][pos as usize].read();
+        assert_eq!(screen_char.char, c);
+    }
+}
+
+#[test_case]
+fn test_print_macro_almost_full_line() {
+    WRITER.lock().clean_buffer();
+    let s = "c";
+    let c = s.as_bytes();
+    for _ in 0..SCREEN_WIDTH - 1 {
+        print!("{}", s);
+    }
+
+    for i in 0..SCREEN_WIDTH - 1 {
+        let screen_char = WRITER.lock().buffer.data[0][i as usize].read();
+        assert_eq!(screen_char.char, c[0]);
+    }
+    
+    assert_eq!(WRITER.lock().rowpos, 0);
+}
+
+
+#[test_case]
+fn test_print_macro_full_line() {
+    WRITER.lock().clean_buffer();
+    let s = "c";
+    let c = s.as_bytes();
+    for _ in 0..SCREEN_WIDTH {
+        print!("{}", s);
+    }
+
+    for i in 0..SCREEN_WIDTH {
+        let screen_char = WRITER.lock().buffer.data[0][i as usize].read();
+        assert_eq!(screen_char.char, c[0]);
+    }
+    
+    assert_eq!(WRITER.lock().rowpos, 1);
+}
+
+#[test_case]
+fn test_print_macro_more_than_full_line() {
+    WRITER.lock().clean_buffer();
+    let s = "a";
+    let c = s.as_bytes();
+    for _ in 0..SCREEN_WIDTH {
+        print!("{}", s);
+    }
+
+    print!("b");
+    
+    for i in 0..SCREEN_WIDTH {
+        let screen_char = WRITER.lock().buffer.data[0][i as usize].read();
+        assert_eq!(screen_char.char, c[0]);
+    }
+
+    let screen_char = WRITER.lock().buffer.data[1][0].read();
+    assert_eq!(screen_char.char, b'b');
+    
+    assert_eq!(WRITER.lock().rowpos, 1);
+}
+
+
+#[test_case]
+fn test_println_macro_empty(){
+    WRITER.lock().clean_buffer();
+    println!();
+    assert_eq!(WRITER.lock().rowpos, 1);
+}
+
+#[test_case]
+fn test_println_macro_empty_string(){
+    WRITER.lock().clean_buffer();
+    println!("");
+    assert_eq!(WRITER.lock().rowpos, 1);
+}
+
+#[test_case]
+fn test_println_macro_simple(){
+    let s = "QSqsdFliq albcbw";
+    WRITER.lock().clean_buffer();
+    println!("{}", s);
+    assert_eq!(WRITER.lock().rowpos, 1);
+}
+
+#[test_case]
+pub fn test_swift_up_simple(){
+    WRITER.lock().clean_buffer();
+    let mut c = b'a';
+    for _ in 0..SCREEN_HEIGHT - 1 {
+        println!("{}", c as char);
+        c += 1;
+    }
+
+    print!("{}", c as char);
+
+
+    let mut c = b'a';
+    for i in 0..SCREEN_HEIGHT {
+        let screen_char = WRITER.lock().buffer.data[i as usize][0].read();
+        assert_eq!(screen_char.char, c);
+        c += 1;
+    }
+}
+
+#[test_case]
+pub fn test_swift_up_full(){
+    WRITER.lock().clean_buffer();
+    let mut c = b'a';
+    for _ in 0..SCREEN_HEIGHT {
+        println!("{}", c as char);
+        c += 1;
+    }
+
+    let mut c = b'b';
+    for i in 0..SCREEN_HEIGHT - 1 {
+        let screen_char = WRITER.lock().buffer.data[i as usize][0].read();
+        assert_eq!(screen_char.char, c);
+        c += 1;
+    }
+}
+
+#[test_case]
+pub fn test_swift_up_full_with_last_line(){
+    WRITER.lock().clean_buffer();
+    let mut c = b'a';
+    for _ in 0..SCREEN_HEIGHT {
+        println!("{}", c as char);
+        c += 1;
+    }
+
+    print!("{}", c as char);
+    
+    let mut c = b'b';
+    for i in 0..SCREEN_HEIGHT {
+        let screen_char = WRITER.lock().buffer.data[i as usize][0].read();
+        assert_eq!(screen_char.char, c);
+        c += 1;
+    }
+}
