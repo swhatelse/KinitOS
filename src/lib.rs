@@ -17,7 +17,7 @@ use core::arch::asm;
 pub fn test_panic_handler(info: &PanicInfo) -> ! {
     serial_println!("[test failure]");
     serial_println!("Error:\n {}", info);
-    exit_qemu(QemuExitCode::Success);
+    exit_qemu(QemuExitCode::Failure);
     loop{}
 }
 
